@@ -51,6 +51,22 @@ def sig_str_from_p(pval,sigstr_fmt="std",ns_str=""):
     else: 
         raise ValueError("Unrecognized sigstr_fmt: {0}. Please use 'std' or 'pval'.".format(sigstr_fmt))
 
+def single_subgroup_pair_stats_test(group_data_df,analyte_col,first_subgroup,second_subgroup,subgroup_col,stats_test="Mann-Whitney",
+                                sigstr_fmt="std",ns_str=""):
+    """Does a single statistical test between the subgroups specified by first_subgroup and second_subgroup and returns
+    the results as a Pandas Series containing Analyte, stat, pval, sig_str, and Comparison. 
+    """
+    stats_columns = ["Analyte","stat","pval","sig_str","Comparison"]
+    comparison_str = "{0}_{1}".format(first_subgroup,second_subgroup)
+    first_subgroup_data = group_data_df[group_data_df[subgroup_col]==first_subgroup]
+    second_subgroup_data = group_data_df[group_data_df[subgroup_col]==second_subgroup]
+    if stats_test == "Mann-Whitney":
+        stat, pval = sp_stats.mannwhitneyu(x=first_subgroup_data[analyte_col],y=second_subgroup_data[analyte_col],
+                    alternative="two-sided")
+    #TODO: add in support for other statisitcal tests 
+    sig_str = sig_str_from_p(pval,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
+    return pd.Series(dict(zip(stats_columns,[analyte_col,stat,pval,sig_str,comparison_str])))
+
 def pairwise_subgroup_stats_testing(group_data_df,analyte_col,subgroup_col,stats_test="Mann-Whitney",sigstr_fmt="std",
                             ns_str=""):
     """Does pairwise statistical significance testing for each unnique pair of subgroups from group_data_df for a given analyte
@@ -87,28 +103,16 @@ def pairwise_subgroup_stats_testing(group_data_df,analyte_col,subgroup_col,stats
     elif n_subgroups == 2:
         sg_1, sg_2 = subgroups[0],subgroups[1]
         #One pairwise comparison: 1-2
-        comparison_str = "{0}_{1}".format(sg_1,sg_2)
-        sg_1_data = group_data_df[group_data_df[subgroup_col]==sg_1]
-        sg_2_data = group_data_df[group_data_df[subgroup_col]==sg_2]
-        if stats_test == "Mann-Whitney":
-            stat, pval = sp_stats.mannwhitneyu(x=sg_1_data[analyte_col],
-                                            y=sg_2_data[analyte_col],alternative="two-sided")
-        sig_str = sig_str_from_p(pval,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
-        comparisons_stats_df.loc[0,:] = dict(zip(stats_columns,[analyte_col,stat,pval,sig_str,comparison_str]))
+        comparisons_stats_df.loc[0,:] = single_subgroup_pair_stats_test(group_data_df,analyte_col,sg_1,sg_2,subgroup_col,
+                                        stats_test=stats_test,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
     elif n_subgroups == 3:
         sg_1, sg_2, sg_3 = subgroups[0],subgroups[1],subgroups[2]
         #Three pairwise comparisons: 1-2, 2-3, 1-3
         for i,first_subgroup, second_subgroup in zip(range(n_comparisons),
                                                     [sg_1,sg_2,sg_1],
                                                     [sg_2,sg_3,sg_3]):
-            comparison_str = "{0}_{1}".format(first_subgroup,second_subgroup)
-            first_subgroup_data = group_data_df[group_data_df[subgroup_col]==first_subgroup]
-            second_subgroup_data = group_data_df[group_data_df[subgroup_col]==second_subgroup]
-            if stats_test == "Mann-Whitney":
-                stat, pval = sp_stats.mannwhitneyu(x=first_subgroup_data[analyte_col],y=second_subgroup_data[analyte_col],
-                            alternative="two-sided")
-            sig_str = sig_str_from_p(pval,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
-            comparisons_stats_df.loc[i,:] = dict(zip(stats_columns,[analyte_col,stat,pval,sig_str,comparison_str]))
+            comparisons_stats_df.loc[i,:] = single_subgroup_pair_stats_test(group_data_df,analyte_col,first_subgroup,second_subgroup,subgroup_col,
+                                        stats_test=stats_test,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
     elif n_subgroups >= 4:
         if n_subgroups > 4: 
             warnings.warn("Have not implemented 5+ pairwise compairsons yet; results returned are for the first 4 subgroups.")
@@ -117,14 +121,8 @@ def pairwise_subgroup_stats_testing(group_data_df,analyte_col,subgroup_col,stats
         for i,first_subgroup, second_subgroup in zip(range(n_comparisons),
                                                     [sg_1,sg_2,sg_3,sg_1,sg_2,sg_1],
                                                     [sg_2,sg_3,sg_4,sg_3,sg_4,sg_4]):
-            comparison_str = "{0}_{1}".format(first_subgroup,second_subgroup)
-            first_subgroup_data =  group_data_df[group_data_df[subgroup_col]==first_subgroup]
-            second_subgroup_data = group_data_df[group_data_df[subgroup_col]==second_subgroup]
-            if stats_test == "Mann-Whitney":
-                stat, pval = sp_stats.mannwhitneyu(x=first_subgroup_data[analyte_col],
-                                y=second_subgroup_data[analyte_col],alternative="two-sided")
-            sig_str = sig_str_from_p(pval,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
-            comparisons_stats_df.loc[i,:] = dict(zip(stats_columns,[analyte_col,stat,pval,sig_str,comparison_str]))
+            comparisons_stats_df.loc[i,:] = single_subgroup_pair_stats_test(group_data_df,analyte_col,first_subgroup,second_subgroup,subgroup_col,
+                                        stats_test=stats_test,sigstr_fmt=sigstr_fmt,ns_str=ns_str)
     return comparisons_stats_df
 
 def single_analyte_stats(data_df,analyte_col,tissue,sampleID_col,group_re=r'([ABCD])',stats_test="Mann-Whitney",
@@ -136,6 +134,7 @@ def single_analyte_stats(data_df,analyte_col,tissue,sampleID_col,group_re=r'([AB
     Analyte - MS analyte for which significance testing was done; stat, pval, sig_str are results of corresponding stats_test;
     Comparison - details which groups (extracted by group_re) which were compared for that statistical test 
     
+    #TODO: add in options for multiple test correction of p-values 
     """
     #Universal processing - if tissue is specified and is in the columns, subset the data to only that tissue.  
     if "Tissue" in data_df.columns:
@@ -253,8 +252,8 @@ def single_analyte_barplot(data_df,analyte,tissue,sampleID_col="SampleID",
     # data_df["Group"] = data_df[sampleID_col].str.extract(group_re)
     #Partition input dataframe
     #stats test results 
-    #single_analyte_stats_df = single_analyte_stats(data_df,analyte,tissue,sampleID_col=sampleID_col,
-                                              #stats_test=stats_test,split=split,group_re=group_re)
+    single_analyte_stats_df = single_analyte_stats(data_df,analyte,tissue,sampleID_col=sampleID_col,
+                                              stats_test=stats_test,split=split,group_re=group_re)
     #Generate long form data for seaborn 
     tissue_analyte_df = tissue_analyte_long_df(data_df,[analyte],[tissue],sampleID_col=sampleID_col,
                                                group_re=group_re)
@@ -297,7 +296,7 @@ def single_analyte_barplot(data_df,analyte,tissue,sampleID_col="SampleID",
     #Add units to ylabel
     ax.set_ylabel("{0} ({1})".format(analyte,units),fontsize=12,fontweight="bold")
     ax.set_xlabel(tissue.replace("_"," "),labelpad=10,fontsize=12,fontweight="bold")
-    #plot_significance_brackets_single_analyte(ax,single_analyte_stats_df)
+    plot_significance_brackets_single_analyte(ax,single_analyte_stats_df)
     #bold xtick/yticks
     labels = ax.get_xticklabels() + ax.get_yticklabels()
     [label.set_fontweight('bold') for label in labels]
